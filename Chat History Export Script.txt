@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Realm - Export Chat History (portable folder)
 // @namespace    local.airealm.export
-// @version      0.20
+// @version      0.23
 // @description  Exports a chosen range of the Chat History modal as a .zip of paged, indented HTML with an index, search and jump-to-message (built-in zip writer, no libraries).
 // @match        https://airealm.com/*
 // @match        https://www.airealm.com/*
@@ -22,8 +22,16 @@
   const PAGE_DELAY_MS = [0, 100]; // random pause between pages we are collecting
   const SKIP_DELAY_MS = [0, 50];  // shorter pause while skipping past pages we don't need
   const PAGE_TIMEOUT_MS = 15000;
-  const PORTRAIT_RADIUS = '0';           // portrait corners in every export: '0' = square (like the site), '12px' = rounded, '50%' = circle
-  const PORTRAIT_DEFAULT_SIZE = 80;       // starting portrait size; one of 64, 80, 100, 128, 160, 200
+  // Default look of the exported pages (each can also be changed live with the dropdowns at the top of every page):
+  const LAYOUT = 'card';                  // 'card' (like AI Realm's chat) or 'simple' (plain lines with a colored left bar)
+  const PORTRAIT_SHAPE = 'rounded';       // 'rounded' (rounded square) or 'circle'
+  const PORTRAIT_BORDER = 'speaker';      // 'speaker' (speaker color), 'gray' (neutral gray) or 'none'
+  const DIALOGUE_COLOR = 'full';          // 'full' (dialogue matches the name color) or 'name' (name only)
+  const PORTRAIT_DEFAULT_SIZE = 80;       // one of 64, 80, 100, 128, 160, 200
+  const LINE_STYLES = {
+    card: 'gap:16px;padding:14px 16px;border:1px solid rgba(255,255,255,.10);border-left:4px solid var(--c,#888);border-radius:12px;background:rgba(0,0,0,.30)',
+    simple: 'gap:12px;padding:0 0 0 10px;border:0;border-left:3px solid var(--c,#888);border-radius:0;background:none',
+  };
   const MESSAGES_PER_FILE = 100;          // messages per chat-XXXX-YYYY.html page
   const INDEX_DETAILS_IN_SEARCH = false;  // true = also search inside the collapsed <details> dropdowns
 
@@ -293,22 +301,32 @@
 
   // ---------- output files ----------
 
-  const CSS = `:root{--portrait-radius:${PORTRAIT_RADIUS};--bg:#14161a;--card:#1b1e24;--line:#2c2f36;--text:#e6e6e6;--muted:#8a8f98}
-body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);max-width:900px;margin:0 auto;padding:20px;line-height:1.55}
-.msg{border:1px solid var(--line);border-radius:8px;margin:14px 0;padding:10px 14px;background:var(--card)}
+  const CSS = `:root{--bg:#14161a;--card:#1b1e24;--line:#2c2f36;--text:#e6e6e6;--muted:#8a8f98;--portrait-radius:${PORTRAIT_SHAPE === 'circle' ? '50%' : '16px'}}
+html[data-shape="rounded"]{--portrait-radius:16px}
+html[data-shape="circle"]{--portrait-radius:50%}
+body{font-family:Roboto,system-ui,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);max-width:900px;margin:0 auto;padding:20px;line-height:1.55}
+.msg{border:1px solid var(--line);border-radius:10px;margin:14px 0;padding:10px 14px;background:var(--card)}
 .msg-user{border-left:4px solid #3bc9db}
 .msg-assistant{border-left:4px solid #22c489}
 .msg-role{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px}
 .narration{margin:8px 0}
-.line{display:flex;gap:12px;align-items:flex-start;margin:10px 0;padding-left:10px;border-left:3px solid var(--c,#888)}
-.portrait{width:var(--portrait-size,${PORTRAIT_DEFAULT_SIZE}px);height:var(--portrait-size,${PORTRAIT_DEFAULT_SIZE}px);object-fit:cover;border-radius:var(--portrait-radius,${PORTRAIT_RADIUS});flex:0 0 var(--portrait-size,${PORTRAIT_DEFAULT_SIZE}px);background:#000}
+.line{display:flex;align-items:flex-start;margin:10px 0;${LINE_STYLES[LAYOUT] || LINE_STYLES.card}}
+html[data-layout="card"] .line{${LINE_STYLES.card}}
+html[data-layout="simple"] .line{${LINE_STYLES.simple}}
+.portrait{box-sizing:border-box;width:var(--portrait-size,${PORTRAIT_DEFAULT_SIZE}px);height:var(--portrait-size,${PORTRAIT_DEFAULT_SIZE}px);object-fit:cover;border-radius:var(--portrait-radius);flex:0 0 var(--portrait-size,${PORTRAIT_DEFAULT_SIZE}px);background:#000;border:${PORTRAIT_BORDER === 'none' ? '0' : PORTRAIT_BORDER === 'gray' ? '2px solid #6b7078' : '2px solid var(--c,#888)'}}
+html[data-border="speaker"] .portrait{border:2px solid var(--c,#888)}
+html[data-border="gray"] .portrait{border:2px solid #6b7078}
+html[data-border="none"] .portrait{border:0}
 .line-body{flex:1;min-width:0}
-.who{font-weight:600;font-size:.85rem;color:var(--c,#aaa)}
-.said{margin-top:2px}
+.who{font-weight:700;font-size:.9rem;color:var(--c,#aaa)}
+.said{margin-top:2px;font-size:.95rem}
+.said.pre{white-space:pre-line}
+${DIALOGUE_COLOR === 'full' ? '.line:not(.kind-dm) .said{color:var(--c)}' : ''}
+html[data-dlg="full"] .line:not(.kind-dm) .said{color:var(--c)}
+html[data-dlg="name"] .line:not(.kind-dm) .said{color:var(--text)}
 details{background:#101216;border:1px solid var(--line);border-radius:6px;padding:6px 10px;margin:6px 0;font-size:.85rem;color:#b8bcc4}
 summary{cursor:pointer;font-weight:600}
 .toolbar{margin:10px 0}
-.said.pre{white-space:pre-line}
 a{color:#6cb6ff}
 .pager{display:flex;justify-content:space-between;margin:12px 0}
 .tools{margin:14px 0}
@@ -316,6 +334,7 @@ a{color:#6cb6ff}
 .filelist{columns:2}
 .notice{background:#3a2a10;border:1px solid #8a5a10;color:#ffd08a;border-radius:6px;padding:8px 12px;margin:10px 0;white-space:pre-wrap}
 .toolbar button{background:#1b1e24;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px 10px;margin-right:6px;cursor:pointer}
+.view-ctl{display:inline-flex;flex-wrap:wrap;gap:6px 14px;margin-right:12px;font-size:.85rem}
 .dice{color:#6cb6ff;text-decoration:underline dotted}
 .beat-label{display:inline-block;font-size:.7rem;color:var(--muted);border:1px solid #333;border-radius:4px;padding:0 6px}
 `;
@@ -523,21 +542,48 @@ ${INDEX_SCRIPT}</script>
     return 'window.SEARCH = [\n' + rows.join(',\n') + '\n];\n';
   }
 
-  // Portrait size picker shared by every page (size travels in ?ps= so it survives page changes).
+  // View settings shared by every page (size, shape, border, dialogue color). They travel in the page
+  // links (?ly=&ps=&sh=&bd=&dc=) so they survive page changes, and are also remembered by the browser.
   const SIZE_JS = String.raw`(function () {
-  var SIZES = [64, 80, 100, 128, 160, 200], DEFAULT = ${PORTRAIT_DEFAULT_SIZE};
-  function read() {
-    var m = /[?&]ps=(\d+)/.exec(location.search);
-    var v = m ? parseInt(m[1], 10) : 0;
-    if (!v) { try { v = parseInt(localStorage.getItem('portraitSize'), 10) || 0; } catch (e) {} }
-    return SIZES.indexOf(v) >= 0 ? v : DEFAULT;
+  var SIZES = [64, 80, 100, 128, 160, 200];
+  var DEF = { ly: '${LAYOUT}', ps: '${PORTRAIT_DEFAULT_SIZE}', sh: '${PORTRAIT_SHAPE}', bd: '${PORTRAIT_BORDER}', dc: '${DIALOGUE_COLOR}' };
+  var OPTS = {
+    ly: { label: 'Layout', vals: ['card', 'simple'], names: ['Site style (cards)', 'Simple'] },
+    ps: { label: 'Portrait size', vals: SIZES.map(String), names: SIZES.map(function (s) { return s + 'px'; }) },
+    sh: { label: 'Shape', vals: ['rounded', 'circle'], names: ['Rounded square', 'Circle'] },
+    bd: { label: 'Border', vals: ['speaker', 'gray', 'none'], names: ['Speaker color', 'Neutral gray', 'None'] },
+    dc: { label: 'Dialogue', vals: ['full', 'name'], names: ['Full color', 'Name only'] }
+  };
+  var KEYS = ['ly', 'ps', 'sh', 'bd', 'dc'];
+  var cur = {};
+  function fromQuery(k) {
+    var m = new RegExp('[?&]' + k + '=([^&#]*)').exec(location.search);
+    return m ? decodeURIComponent(m[1]) : null;
   }
-  var size = read();
-  function apply() { document.documentElement.style.setProperty('--portrait-size', size + 'px'); }
+  function fromStore(k) { try { return localStorage.getItem('aiRealmView:' + k); } catch (e) { return null; } }
+  KEYS.forEach(function (k) {
+    var v = fromQuery(k);
+    if (v === null || OPTS[k].vals.indexOf(v) < 0) v = fromStore(k);
+    if (v === null || OPTS[k].vals.indexOf(v) < 0) v = DEF[k];
+    if (OPTS[k].vals.indexOf(v) < 0) v = OPTS[k].vals[0];
+    cur[k] = v;
+  });
+  function apply() {
+    var h = document.documentElement;
+    h.style.setProperty('--portrait-size', cur.ps + 'px');
+    h.setAttribute('data-layout', cur.ly);
+    h.setAttribute('data-shape', cur.sh);
+    h.setAttribute('data-border', cur.bd);
+    h.setAttribute('data-dlg', cur.dc);
+  }
   window.withPs = function (u) {
     var h = u.indexOf('#'), hash = h >= 0 ? u.slice(h) : '', base = h >= 0 ? u.slice(0, h) : u;
-    base = base.replace(/([?&])ps=\d+&?/, '$1').replace(/[?&]$/, '');
-    return base + (base.indexOf('?') >= 0 ? '&' : '?') + 'ps=' + size + hash;
+    var q = base.indexOf('?'), path = q >= 0 ? base.slice(0, q) : base, kept = [];
+    if (q >= 0) {
+      base.slice(q + 1).split('&').forEach(function (p) { if (p && KEYS.indexOf(p.split('=')[0]) < 0) kept.push(p); });
+    }
+    KEYS.forEach(function (k) { kept.push(k + '=' + encodeURIComponent(cur[k])); });
+    return path + '?' + kept.join('&') + hash;
   };
   function rewrite() {
     var as = document.querySelectorAll('a[href]');
@@ -550,22 +596,27 @@ ${INDEX_SCRIPT}</script>
     var host = document.getElementById('sizeCtl');
     if (!host) return;
     host.innerHTML = '';
-    var lab = document.createElement('label');
-    lab.appendChild(document.createTextNode('Portrait size '));
-    var sel = document.createElement('select');
-    SIZES.forEach(function (s) {
-      var o = document.createElement('option');
-      o.value = s; o.textContent = s + 'px';
-      if (s === size) o.selected = true;
-      sel.appendChild(o);
+    var wrap = document.createElement('span');
+    wrap.className = 'view-ctl';
+    KEYS.forEach(function (k) {
+      var lab = document.createElement('label');
+      lab.appendChild(document.createTextNode(OPTS[k].label + ' '));
+      var sel = document.createElement('select');
+      OPTS[k].vals.forEach(function (v, i) {
+        var o = document.createElement('option');
+        o.value = v; o.textContent = OPTS[k].names[i];
+        if (v === cur[k]) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.onchange = function () {
+        cur[k] = sel.value;
+        try { localStorage.setItem('aiRealmView:' + k, cur[k]); } catch (e) {}
+        apply(); rewrite();
+      };
+      lab.appendChild(sel);
+      wrap.appendChild(lab);
     });
-    sel.onchange = function () {
-      size = parseInt(sel.value, 10);
-      try { localStorage.setItem('portraitSize', String(size)); } catch (e) {}
-      apply(); rewrite();
-    };
-    lab.appendChild(sel);
-    host.appendChild(lab);
+    host.appendChild(wrap);
   }
   var od = document.querySelectorAll('details[open]');
   for (var j = 0; j < od.length; j++) od[j].removeAttribute('open');
@@ -647,12 +698,18 @@ Editing a message (this changes ONLY your local copy, not the site)
 
   Point src at any image file, inside or outside the images folder.
 
-Portrait size
-  Use the "Portrait size" dropdown at the top of any page (64, 80, 100, 128, 160, 200 px).
-  The choice is carried in the page links (?ps=) and remembered by the browser.
-  Portraits are square by default. To change the default shape or size for ALL future exports,
-  edit PORTRAIT_RADIUS and PORTRAIT_DEFAULT_SIZE at the top of the userscript. (For one export
-  only, edit --portrait-radius / --portrait-size in style.css.)
+Look of the pages (layout / portrait size / shape / border / dialogue color)
+  The row of dropdowns at the top of every page matches AI Realm's own options:
+    Layout         Site style (cards, like AI Realm's chat) or Simple (plain lines, colored left bar)
+    Portrait size  64, 80, 100, 128, 160, 200 px
+    Shape          Rounded square or Circle
+    Border         Speaker color, Neutral gray, or None
+    Dialogue       Full color (dialogue matches the name) or Name only
+  Your choices are carried in the page links (?ly=&ps=&sh=&bd=&dc=) and remembered by the browser.
+  For the plain look of earlier versions choose: Layout = Simple, Border = None, Dialogue = Name only.
+  To change the starting look for ALL future exports, edit LAYOUT, PORTRAIT_SHAPE, PORTRAIT_BORDER,
+  DIALOGUE_COLOR and PORTRAIT_DEFAULT_SIZE at the top of the userscript.
+  To restyle an existing export, edit style.css (the .line and .portrait rules).
 
 Using <say> directly in these pages (same command as on the site)
   Every chat-XXXX-YYYY.html page loads portraits.js and say.js, which turn <say> tags into
